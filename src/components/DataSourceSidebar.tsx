@@ -59,17 +59,15 @@ export default function DataSourceSidebar() {
   return (
     <>
       <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-3 p-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20 text-primary">
-            <Database className="h-6 w-6" />
-          </div>
-          <div className="flex flex-col">
+        <div className="flex items-center gap-3 p-3">
+          <Database className="h-7 w-7 text-sidebar-foreground/80" />
+          <div className="flex items-center gap-2">
             <p className="text-lg font-semibold text-sidebar-foreground">
-              DataLens Pro
+              DataLens
             </p>
-            <p className="text-xs text-sidebar-foreground/70">
-              Data Source Viewer
-            </p>
+            <Badge variant="outline" className="border-primary/50 text-xs">
+              Pro
+            </Badge>
           </div>
         </div>
       </SidebarHeader>
@@ -91,7 +89,7 @@ export default function DataSourceSidebar() {
                     <span className="truncate">{source.name}</span>
                   </div>
                   {source.newItemsCount > 0 && (
-                    <Badge variant="secondary" className="h-5 px-2">
+                    <Badge variant="destructive" className="h-5 px-2">
                       {source.newItemsCount > 99 ? '99+' : source.newItemsCount}
                     </Badge>
                   )}
