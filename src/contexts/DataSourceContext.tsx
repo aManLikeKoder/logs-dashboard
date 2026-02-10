@@ -68,7 +68,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   // Listen for data source changes from Firestore
   useEffect(() => {
-    const q = query(collection(db, 'dataSources'), orderBy('name', 'asc'));
+    const q = query(
+      collection(db, 'dataSources'),
+      orderBy('lastUpdatedAt', 'desc')
+    );
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
@@ -79,14 +82,16 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
             id: doc.id,
             name: data.name,
             collectionPath: data.collection,
-            firebaseConfig: data.config ? JSON.stringify(data.config, null, 2) : '{}',
+            firebaseConfig: data.config
+              ? JSON.stringify(data.config, null, 2)
+              : '{}',
             fieldUsername: data.fieldUsername,
             fieldPassword: data.fieldPassword,
             fieldCreatedAt: data.fieldCreatedAt,
             displayPin: data.displayPin,
             fieldPin: data.fieldPin,
             lastUpdatedAt:
-              (data.lastUpdatedAt as Timestamp)?.toMillis() || Date.now(),
+              (data.lastUpdatedAt as Timestamp)?.toMillis() || 0,
             newItemsCount: 0,
           } as EnrichedDataSource);
         });
@@ -257,13 +262,9 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const sortedDataSources = useMemo(() => {
-    return [...dataSources].sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
-  }, [dataSources]);
-
   const contextValue = useMemo(
     () => ({
-      dataSources: sortedDataSources,
+      dataSources: dataSources,
       addDataSource,
       updateDataSource,
       deleteDataSource,
@@ -274,7 +275,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       updateSourceTimestamp,
     }),
     [
-      sortedDataSources,
+      dataSources,
       activeDataSource,
       defaultDataSourceId,
       handleSetActiveDataSource,
