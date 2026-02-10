@@ -68,10 +68,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   // Listen for data source changes from Firestore
   useEffect(() => {
-    const q = query(
-      collection(db, 'dataSources'),
-      orderBy('name', 'asc')
-    );
+    const q = query(collection(db, 'dataSources'), orderBy('name', 'asc'));
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
@@ -80,10 +77,17 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
           const data = doc.data();
           sources.push({
             id: doc.id,
-            ...data,
+            name: data.name,
+            collectionPath: data.collection,
+            firebaseConfig: data.config ? JSON.stringify(data.config, null, 2) : '{}',
+            fieldUsername: data.fieldUsername,
+            fieldPassword: data.fieldPassword,
+            fieldCreatedAt: data.fieldCreatedAt,
+            displayPin: data.displayPin,
+            fieldPin: data.fieldPin,
             lastUpdatedAt:
               (data.lastUpdatedAt as Timestamp)?.toMillis() || Date.now(),
-            newItemsCount: 0, // Placeholder for future implementation
+            newItemsCount: 0,
           } as EnrichedDataSource);
         });
         setDataSources(sources);
@@ -94,7 +98,8 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         toast({
           variant: 'destructive',
           title: 'Firestore Error',
-          description: 'Could not load data sources. Check console for details.',
+          description:
+            'Could not load data sources. Check console for details.',
         });
         setIsLoading(false);
       }
@@ -114,22 +119,30 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         setDefaultDataSourceId(newDefaultId);
       }
 
-      if (dataSources.length > 0) {
-        const sourceToActivate = 
+      if (dataSources.length > 0 && !activeDataSource) {
+        const sourceToActivate =
           dataSources.find((ds) => ds.id === newDefaultId) || dataSources[0];
         setActiveDataSourceState(sourceToActivate);
       }
     });
 
     return () => unsubscribe();
-  }, [dataSources]);
+  }, [dataSources, activeDataSource]);
 
   const addDataSource = async (source: Omit<DataSource, 'id'>) => {
     try {
-      await addDoc(collection(db, 'dataSources'), {
-        ...source,
+      const firestoreDoc = {
+        name: source.name,
+        config: JSON.parse(source.firebaseConfig),
+        collection: source.collectionPath,
+        fieldUsername: source.fieldUsername,
+        fieldPassword: source.fieldPassword,
+        fieldCreatedAt: source.fieldCreatedAt,
+        displayPin: source.displayPin,
+        fieldPin: source.fieldPin || '',
         lastUpdatedAt: serverTimestamp(),
-      });
+      };
+      await addDoc(collection(db, 'dataSources'), firestoreDoc);
       toast({
         title: 'Success!',
         description: `Data source "${source.name}" has been added.`,
@@ -150,10 +163,18 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   ) => {
     const docRef = doc(db, 'dataSources', sourceId);
     try {
-      await updateDoc(docRef, {
-        ...updatedSourceData,
+      const firestoreDoc = {
+        name: updatedSourceData.name,
+        config: JSON.parse(updatedSourceData.firebaseConfig),
+        collection: updatedSourceData.collectionPath,
+        fieldUsername: updatedSourceData.fieldUsername,
+        fieldPassword: updatedSourceData.fieldPassword,
+        fieldCreatedAt: updatedSourceData.fieldCreatedAt,
+        displayPin: updatedSourceData.displayPin,
+        fieldPin: updatedSourceData.fieldPin || '',
         lastUpdatedAt: serverTimestamp(),
-      });
+      };
+      await updateDoc(docRef, firestoreDoc);
       toast({
         title: 'Success!',
         description: `Data source "${updatedSourceData.name}" has been updated.`,
@@ -177,6 +198,9 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         title: 'Source Deleted',
         description: `Data source "${sourceName}" has been deleted.`,
       });
+      if (activeDataSource?.id === sourceId) {
+        setActiveDataSourceState(dataSources[0] || null);
+      }
       if (defaultDataSourceId === sourceId) {
         await setDefaultDataSource(''); // Unset default
       }
@@ -232,7 +256,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       console.error('Error updating timestamp: ', error);
     }
   };
-  
+
   const sortedDataSources = useMemo(() => {
     return [...dataSources].sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
   }, [dataSources]);
