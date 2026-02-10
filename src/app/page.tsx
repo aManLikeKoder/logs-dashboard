@@ -10,13 +10,13 @@ import {
 } from '@/components/ui/sidebar';
 
 export default function Home() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   return (
     <DataSourceProvider>
       <SidebarProvider
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
-        defaultOpen={false}
+        defaultOpen={true}
       >
         <Sidebar>
           <DataSourceSidebar />
