@@ -163,8 +163,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         (snapshot) => {
           if (snapshot.metadata.hasPendingWrites) return;
 
-          const lastViewedTimestamp =
-            viewTimestamps[source.id] || source.lastUpdatedAt;
+          const lastViewedTimestamp = viewTimestamps[source.id] || 0;
           let newItemsCount = 0;
           let latestTimestampMillis = 0;
 
@@ -189,7 +188,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
             )
           );
 
-          if (latestTimestampMillis > source.lastUpdatedAt) {
+          if (
+            latestTimestampMillis > 0 &&
+            latestTimestampMillis > source.lastUpdatedAt
+          ) {
             const mainDbDocRef = doc(db, 'dataSources', source.id);
             updateDoc(mainDbDocRef, {
               lastUpdatedAt: Timestamp.fromMillis(latestTimestampMillis),
@@ -197,7 +199,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
           }
         },
         (err) => {
-          // This can happen if credentials are wrong, etc. Don't spam console.
+          console.error(
+            `Error listening to source: ${source.name} (${source.id})`,
+            err
+          );
         }
       );
       unsubscribers.push(unsubscribe);
@@ -404,3 +409,5 @@ export function useDataSources() {
   }
   return context;
 }
+
+    
