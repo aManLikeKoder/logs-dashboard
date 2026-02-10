@@ -70,49 +70,74 @@ const formSchema = z
 type AddDataSourceDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editingSource?: DataSource | null;
+};
+
+const defaultFormValues = {
+  name: '',
+  firebaseConfig: '',
+  collectionPath: '',
+  fieldUsername: 'username',
+  fieldPassword: 'password',
+  fieldCreatedAt: 'createdAt',
+  displayPin: false,
+  fieldPin: 'pin',
 };
 
 export default function AddDataSourceDialog({
   open,
   onOpenChange,
+  editingSource,
 }: AddDataSourceDialogProps) {
-  const { addDataSource } = useDataSources();
+  const { addDataSource, updateDataSource } = useDataSources();
+  const isEditing = !!editingSource;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: '',
-      firebaseConfig: '',
-      collectionPath: '',
-      fieldUsername: 'username',
-      fieldPassword: 'password',
-      fieldCreatedAt: 'createdAt',
-      displayPin: false,
-      fieldPin: 'pin',
-    },
+    defaultValues: defaultFormValues,
   });
 
   const displayPinValue = form.watch('displayPin');
 
+  useEffect(() => {
+    if (open) {
+      if (isEditing && editingSource) {
+        form.reset({
+          name: editingSource.name,
+          firebaseConfig: editingSource.firebaseConfig,
+          collectionPath: editingSource.collectionPath,
+          fieldUsername: editingSource.fieldUsername,
+          fieldPassword: editingSource.fieldPassword,
+          fieldCreatedAt: editingSource.fieldCreatedAt,
+          displayPin: editingSource.displayPin,
+          fieldPin: editingSource.fieldPin || 'pin',
+        });
+      } else {
+        form.reset(defaultFormValues);
+      }
+    }
+  }, [open, editingSource, isEditing, form]);
+
   function onSubmit(values: z.infer<typeof formSchema>) {
-    addDataSource(values as Omit<DataSource, 'id'>);
-    form.reset();
+    if (isEditing && editingSource) {
+      updateDataSource(editingSource.id, values);
+    } else {
+      addDataSource(values as Omit<DataSource, 'id'>);
+    }
     onOpenChange(false);
   }
-
-  useEffect(() => {
-    if (!open) {
-      form.reset();
-    }
-  }, [open, form]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[800px] grid-rows-[auto_1fr_auto]">
         <DialogHeader>
-          <DialogTitle>Add New Data Source</DialogTitle>
+          <DialogTitle>
+            {isEditing ? 'Edit Data Source' : 'Add New Data Source'}
+          </DialogTitle>
           <DialogDescription>
-            Configure a new Firebase data source to monitor.
+            {isEditing
+              ? 'Update the configuration for this data source.'
+              : 'Configure a new Firebase data source to monitor.'}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -122,128 +147,128 @@ export default function AddDataSourceDialog({
             className="space-y-4 overflow-hidden"
           >
             <ScrollArea className="h-[60vh] md:h-auto md:max-h-[65vh] pr-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Data Source Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="My Awesome Project" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="firebaseConfig"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Firebase Config (JSON)</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder='{ "apiKey": "...", "authDomain": "...", ... }'
-                          className="h-48 font-mono text-xs"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="collectionPath"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Collection Path</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., users" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="fieldUsername"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username Field</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="fieldPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password/Access Field</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="fieldCreatedAt"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Timestamp Field</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <div className="border-t border-border pt-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Data Source Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="My Awesome Project" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="firebaseConfig"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Firebase Config (JSON)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder='{ "apiKey": "...", "authDomain": "...", ... }'
+                            className="h-48 font-mono text-xs"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="collectionPath"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Collection Path</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., users" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fieldUsername"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Username Field</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fieldPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password/Access Field</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fieldCreatedAt"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Timestamp Field</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="border-t border-border pt-4 space-y-4">
                     <FormField
                       control={form.control}
                       name="displayPin"
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                            <div className="space-y-0.5">
-                                <FormLabel>Display PIN</FormLabel>
-                            </div>
-                            <FormControl>
-                                <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                />
-                            </FormControl>
+                          <div className="space-y-0.5">
+                            <FormLabel>Display PIN</FormLabel>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
                         </FormItem>
                       )}
                     />
                     {displayPinValue && (
-                       <FormField
-                         control={form.control}
-                         name="fieldPin"
-                         render={({ field }) => (
-                           <FormItem>
-                             <FormLabel>PIN Field Name</FormLabel>
-                             <FormControl>
-                               <Input {...field} />
-                             </FormControl>
-                             <FormMessage />
-                           </FormItem>
-                         )}
-                       />
+                      <FormField
+                        control={form.control}
+                        name="fieldPin"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>PIN Field Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                 </div>
+                  </div>
+                </div>
               </div>
-            </div>
             </ScrollArea>
           </form>
         </Form>
@@ -256,7 +281,7 @@ export default function AddDataSourceDialog({
             Cancel
           </Button>
           <Button type="submit" form="add-source-form">
-            Save Source
+            {isEditing ? 'Save Changes' : 'Save Source'}
           </Button>
         </DialogFooter>
       </DialogContent>

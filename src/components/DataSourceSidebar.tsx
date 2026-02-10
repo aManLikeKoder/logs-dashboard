@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useDataSources } from '@/contexts/DataSourceContext';
+import { useDataSources, type EnrichedDataSource } from '@/contexts/DataSourceContext';
 import {
   SidebarHeader,
   SidebarContent,
@@ -10,10 +10,23 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarGroup,
-  SidebarMenuAction,
 } from '@/components/ui/sidebar';
-import { Database, Plus, Star } from 'lucide-react';
+import {
+  Database,
+  Plus,
+  Star,
+  MoreVertical,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import AddDataSourceDialog from './AddDataSourceDialog';
+import DeleteDataSourceDialog from './DeleteDataSourceDialog';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +38,23 @@ export default function DataSourceSidebar() {
     defaultDataSourceId,
     setDefaultDataSource,
   } = useDataSources();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingSource, setEditingSource] = useState<EnrichedDataSource | null>(
+    null
+  );
+  const [deletingSource, setDeletingSource] =
+    useState<EnrichedDataSource | null>(null);
+
+  const openAddDialog = () => {
+    setEditingSource(null);
+    setDialogOpen(true);
+  };
+
+  const openEditDialog = (source: EnrichedDataSource) => {
+    setEditingSource(source);
+    setDialogOpen(true);
+  };
 
   return (
     <>
@@ -53,7 +82,7 @@ export default function DataSourceSidebar() {
                 <SidebarMenuButton
                   onClick={() => setActiveDataSource(source)}
                   isActive={activeDataSource?.id === source.id}
-                  className="justify-between"
+                  className="pr-8"
                 >
                   <div className="flex items-center gap-2">
                     {defaultDataSourceId === source.id && (
@@ -63,22 +92,34 @@ export default function DataSourceSidebar() {
                   </div>
                 </SidebarMenuButton>
 
-                <SidebarMenuAction
-                  showOnHover={true}
-                  onClick={() => setDefaultDataSource(source.id)}
-                  aria-label="Set as default"
-                  className={cn(
-                    defaultDataSourceId === source.id &&
-                      'text-amber-400 hover:text-amber-400'
-                  )}
-                >
-                  <Star
-                    className={cn(
-                      'h-4 w-4',
-                      defaultDataSourceId === source.id && 'fill-current'
-                    )}
-                  />
-                </SidebarMenuAction>
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/menu-item:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-7 w-7">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={() => setDefaultDataSource(source.id)}
+                      >
+                        <Star className="mr-2 h-4 w-4" />
+                        Set as Default
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => openEditDialog(source)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => setDeletingSource(source)}
+                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
@@ -86,13 +127,22 @@ export default function DataSourceSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <Button onClick={() => setIsDialogOpen(true)} className="w-full">
+        <Button onClick={openAddDialog} className="w-full">
           <Plus className="mr-2 h-4 w-4" />
           Add Source
         </Button>
       </SidebarFooter>
 
-      <AddDataSourceDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} />
+      <AddDataSourceDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editingSource={editingSource}
+      />
+      <DeleteDataSourceDialog
+        open={!!deletingSource}
+        onOpenChange={() => setDeletingSource(null)}
+        source={deletingSource}
+      />
     </>
   );
 }

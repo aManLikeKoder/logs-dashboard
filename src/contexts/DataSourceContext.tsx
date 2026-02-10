@@ -19,6 +19,11 @@ export interface EnrichedDataSource extends DataSource {
 interface DataSourceContextType {
   dataSources: EnrichedDataSource[];
   addDataSource: (source: Omit<DataSource, 'id'>) => void;
+  updateDataSource: (
+    sourceId: string,
+    updatedSource: Omit<DataSource, 'id'>
+  ) => void;
+  deleteDataSource: (sourceId: string) => void;
   activeDataSource: EnrichedDataSource | null;
   setActiveDataSource: (source: EnrichedDataSource | null) => void;
   defaultDataSourceId: string | null;
@@ -33,21 +38,20 @@ const DataSourceContext = createContext<DataSourceContextType | undefined>(
 const DEFAULT_DATA_SOURCE_ID_KEY = 'defaultDataSourceId';
 const DATA_SOURCES_KEY = 'dataSources';
 
-
 export function DataSourceProvider({ children }: { children: ReactNode }) {
   const [dataSources, setDataSources] = useState<EnrichedDataSource[]>(() => {
     try {
-        const savedSources = localStorage.getItem(DATA_SOURCES_KEY);
-        if (savedSources) {
-            return JSON.parse(savedSources);
-        }
+      const savedSources = localStorage.getItem(DATA_SOURCES_KEY);
+      if (savedSources) {
+        return JSON.parse(savedSources);
+      }
     } catch (e) {
-        console.error("Failed to parse data sources from localStorage", e);
+      console.error('Failed to parse data sources from localStorage', e);
     }
     return initialDataSources
       .map((ds, index) => ({
         ...ds,
-        lastUpdatedAt: Date.now() - index * 1000 * 60, 
+        lastUpdatedAt: Date.now() - index * 1000 * 60,
       }))
       .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
   });
@@ -60,12 +64,11 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-        localStorage.setItem(DATA_SOURCES_KEY, JSON.stringify(dataSources));
-    } catch(e) {
-        console.error("Failed to save data sources to localStorage", e);
+      localStorage.setItem(DATA_SOURCES_KEY, JSON.stringify(dataSources));
+    } catch (e) {
+      console.error('Failed to save data sources to localStorage', e);
     }
   }, [dataSources]);
-
 
   useEffect(() => {
     const savedDefaultId = localStorage.getItem(DEFAULT_DATA_SOURCE_ID_KEY);
@@ -76,9 +79,11 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         setActiveDataSourceState(defaultSource);
       }
     } else if (dataSources.length > 0 && !activeDataSource) {
-        // If no default is set, activate the most recently updated one.
-        const sorted = [...dataSources].sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
-        setActiveDataSourceState(sorted[0]);
+      // If no default is set, activate the most recently updated one.
+      const sorted = [...dataSources].sort(
+        (a, b) => b.lastUpdatedAt - a.lastUpdatedAt
+      );
+      setActiveDataSourceState(sorted[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only on initial mount
@@ -97,15 +102,56 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const updateDataSource = (
+    sourceId: string,
+    updatedSourceData: Omit<DataSource, 'id'>
+  ) => {
+    const fullUpdatedSource = {
+      ...updatedSourceData,
+      id: sourceId,
+      lastUpdatedAt: Date.now(),
+    };
+    setDataSources((prev) =>
+      prev.map((ds) => (ds.id === sourceId ? fullUpdatedSource : ds))
+    );
+    if (activeDataSource?.id === sourceId) {
+      setActiveDataSourceState(fullUpdatedSource);
+    }
+    toast({
+      title: 'Success!',
+      description: `Data source "${updatedSourceData.name}" has been updated.`,
+    });
+  };
+
+  const deleteDataSource = (sourceId: string) => {
+    const sourceName = dataSources.find(ds => ds.id === sourceId)?.name;
+    setDataSources((prev) => prev.filter((ds) => ds.id !== sourceId));
+
+    if (activeDataSource?.id === sourceId) {
+      const remainingSources = dataSources.filter((ds) => ds.id !== sourceId);
+      const sorted = [...remainingSources].sort(
+        (a, b) => b.lastUpdatedAt - a.lastUpdatedAt
+      );
+      setActiveDataSourceState(sorted.length > 0 ? sorted[0] : null);
+    }
+    if (defaultDataSourceId === sourceId) {
+      localStorage.removeItem(DEFAULT_DATA_SOURCE_ID_KEY);
+      setDefaultDataSourceId(null);
+    }
+
+    toast({
+        title: 'Source Deleted',
+        description: `Data source "${sourceName}" has been deleted.`,
+      });
+  };
+
   const setDefaultDataSource = (sourceId: string) => {
     localStorage.setItem(DEFAULT_DATA_SOURCE_ID_KEY, sourceId);
     setDefaultDataSourceId(sourceId);
     const source = dataSources.find((s) => s.id === sourceId);
     toast({
       title: 'Default Source Set!',
-      description: `"${
-        source?.name
-      }" will now be loaded by default.`,
+      description: `"${source?.name}" will now be loaded by default.`,
     });
   };
 
@@ -117,9 +163,11 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   );
 
   const updateSourceTimestamp = (sourceId: string) => {
-    setDataSources(prev => prev.map(ds => 
-        ds.id === sourceId ? {...ds, lastUpdatedAt: Date.now()} : ds
-    ));
+    setDataSources((prev) =>
+      prev.map((ds) =>
+        ds.id === sourceId ? { ...ds, lastUpdatedAt: Date.now() } : ds
+      )
+    );
   };
 
   const sortedDataSources = useMemo(() => {
@@ -131,11 +179,13 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       value={{
         dataSources: sortedDataSources,
         addDataSource,
+        updateDataSource,
+        deleteDataSource,
         activeDataSource,
         setActiveDataSource: handleSetActiveDataSource,
         defaultDataSourceId,
         setDefaultDataSource,
-        updateSourceTimestamp
+        updateSourceTimestamp,
       }}
     >
       {children}
