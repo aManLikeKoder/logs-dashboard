@@ -19,6 +19,9 @@ export function getFirebaseForSource(source: DataSource): {
   }
 
   try {
+    if (!source.firebaseConfig) {
+      throw new Error('Firebase configuration is missing for this data source.');
+    }
     const firebaseConfig = JSON.parse(source.firebaseConfig);
     
     const existingApp = getApps().find((app) => app.name === appName);
