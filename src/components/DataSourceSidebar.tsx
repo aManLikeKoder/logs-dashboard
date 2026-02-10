@@ -14,6 +14,7 @@ import {
 import { Database, Plus } from 'lucide-react';
 import AddDataSourceDialog from './AddDataSourceDialog';
 import { Button } from './ui/button';
+import { Badge } from './ui/badge';
 
 export default function DataSourceSidebar() {
   const { dataSources, activeDataSource, setActiveDataSource } = useDataSources();
@@ -41,9 +42,14 @@ export default function DataSourceSidebar() {
                 <SidebarMenuButton
                   onClick={() => setActiveDataSource(source)}
                   isActive={activeDataSource?.id === source.id}
-                  className="justify-start"
+                  className="justify-between"
                 >
-                  {source.name}
+                  <span>{source.name}</span>
+                  {source.newItemsCount && source.newItemsCount > 0 && (
+                     <Badge className="bg-primary/20 text-primary-foreground hover:bg-primary/30 h-5">
+                       {source.newItemsCount > 99 ? '99+' : source.newItemsCount}
+                     </Badge>
+                  )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
