@@ -4,7 +4,7 @@ export interface DataSource {
   collectionPath: string;
   firebaseConfig: string; // Stored as JSON string
   fieldUsername: string;
-  fieldPassword: 'password' | 'access';
+  fieldPassword: string;
   fieldCreatedAt: string;
   displayPin: boolean;
   fieldPin?: string;
@@ -13,11 +13,9 @@ export interface DataSource {
 export interface DataItem {
   id: string;
   username: string;
-  access?: string;
-  password?: string;
-  pin?: string;
   createdAt: {
     seconds: number;
     nanoseconds: number;
   };
+  [key: string]: any;
 }

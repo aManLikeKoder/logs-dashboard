@@ -9,12 +9,11 @@ import {
   useMemo,
 } from 'react';
 import type { DataSource } from '@/lib/types';
-import { initialDataSources, addNewMockDataItem } from '@/lib/mock-data';
+import { initialDataSources } from '@/lib/mock-data';
 import { useToast } from '@/hooks/use-toast';
 
 export interface EnrichedDataSource extends DataSource {
   lastUpdatedAt: number;
-  newItemsCount: number;
 }
 
 interface DataSourceContextType {
@@ -24,6 +23,7 @@ interface DataSourceContextType {
   setActiveDataSource: (source: EnrichedDataSource | null) => void;
   defaultDataSourceId: string | null;
   setDefaultDataSource: (sourceId: string) => void;
+  updateSourceTimestamp: (sourceId: string) => void;
 }
 
 const DataSourceContext = createContext<DataSourceContextType | undefined>(
@@ -31,14 +31,23 @@ const DataSourceContext = createContext<DataSourceContextType | undefined>(
 );
 
 const DEFAULT_DATA_SOURCE_ID_KEY = 'defaultDataSourceId';
+const DATA_SOURCES_KEY = 'dataSources';
+
 
 export function DataSourceProvider({ children }: { children: ReactNode }) {
   const [dataSources, setDataSources] = useState<EnrichedDataSource[]>(() => {
+    try {
+        const savedSources = localStorage.getItem(DATA_SOURCES_KEY);
+        if (savedSources) {
+            return JSON.parse(savedSources);
+        }
+    } catch (e) {
+        console.error("Failed to parse data sources from localStorage", e);
+    }
     return initialDataSources
       .map((ds, index) => ({
         ...ds,
-        lastUpdatedAt: Date.now() - index * 1000 * 60, // Stagger timestamps for initial sort
-        newItemsCount: 0,
+        lastUpdatedAt: Date.now() - index * 1000 * 60, 
       }))
       .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
   });
@@ -50,6 +59,15 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
+    try {
+        localStorage.setItem(DATA_SOURCES_KEY, JSON.stringify(dataSources));
+    } catch(e) {
+        console.error("Failed to save data sources to localStorage", e);
+    }
+  }, [dataSources]);
+
+
+  useEffect(() => {
     const savedDefaultId = localStorage.getItem(DEFAULT_DATA_SOURCE_ID_KEY);
     if (savedDefaultId) {
       setDefaultDataSourceId(savedDefaultId);
@@ -57,18 +75,22 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       if (defaultSource && !activeDataSource) {
         setActiveDataSourceState(defaultSource);
       }
+    } else if (dataSources.length > 0 && !activeDataSource) {
+        // If no default is set, activate the most recently updated one.
+        const sorted = [...dataSources].sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
+        setActiveDataSourceState(sorted[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on initial mount
+  }, []); // Only on initial mount
 
   const addDataSource = (source: Omit<DataSource, 'id'>) => {
     const newSource: EnrichedDataSource = {
       ...source,
       id: source.name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now(),
       lastUpdatedAt: Date.now(),
-      newItemsCount: 0,
     };
-    setDataSources((prev) => [...prev, newSource]);
+    setDataSources((prev) => [newSource, ...prev]);
+    setActiveDataSourceState(newSource); // Make the new source active
     toast({
       title: 'Success!',
       description: `Data source "${newSource.name}" has been added.`,
@@ -89,52 +111,16 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   const handleSetActiveDataSource = useCallback(
     (source: EnrichedDataSource | null) => {
-      if (source) {
-        setDataSources((prev) =>
-          prev.map((ds) =>
-            ds.id === source.id ? { ...ds, newItemsCount: 0 } : ds
-          )
-        );
-      }
       setActiveDataSourceState(source);
     },
     []
   );
 
-  // Simulate new data being added to random sources
-  useEffect(() => {
-    if (dataSources.length === 0) return;
-
-    const interval = setInterval(() => {
-      // Add new data with a 30% chance every 5 seconds
-      if (Math.random() < 0.3) {
-        const sourceToUpdateIndex = Math.floor(
-          Math.random() * dataSources.length
-        );
-        const sourceToUpdate = dataSources[sourceToUpdateIndex];
-
-        if (!sourceToUpdate) return;
-
-        addNewMockDataItem(sourceToUpdate.id);
-
-        setDataSources((prev) => {
-          return prev.map((ds) => {
-            if (ds.id === sourceToUpdate.id) {
-              const isCurrentlyActive = activeDataSource?.id === ds.id;
-              return {
-                ...ds,
-                lastUpdatedAt: Date.now(),
-                newItemsCount: isCurrentlyActive ? 0 : ds.newItemsCount + 1,
-              };
-            }
-            return ds;
-          });
-        });
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [dataSources, activeDataSource]);
+  const updateSourceTimestamp = (sourceId: string) => {
+    setDataSources(prev => prev.map(ds => 
+        ds.id === sourceId ? {...ds, lastUpdatedAt: Date.now()} : ds
+    ));
+  };
 
   const sortedDataSources = useMemo(() => {
     return [...dataSources].sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
@@ -149,6 +135,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         setActiveDataSource: handleSetActiveDataSource,
         defaultDataSourceId,
         setDefaultDataSource,
+        updateSourceTimestamp
       }}
     >
       {children}

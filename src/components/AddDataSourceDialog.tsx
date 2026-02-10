@@ -49,7 +49,7 @@ const formSchema = z
       .string()
       .min(1, { message: 'Collection path is required.' }),
     fieldUsername: z.string().min(1, { message: 'Field name is required.' }),
-    fieldPassword: z.enum(['password', 'access']),
+    fieldPassword: z.string().min(1, { message: 'Field name is required.' }),
     fieldCreatedAt: z.string().min(1, { message: 'Field name is required.' }),
     displayPin: z.boolean().default(false),
     fieldPin: z.string().optional(),

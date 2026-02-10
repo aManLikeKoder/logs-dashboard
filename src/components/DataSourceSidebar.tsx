@@ -15,7 +15,6 @@ import {
 import { Database, Plus, Star } from 'lucide-react';
 import AddDataSourceDialog from './AddDataSourceDialog';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
 
 export default function DataSourceSidebar() {
@@ -62,13 +61,6 @@ export default function DataSourceSidebar() {
                     )}
                     <span className="truncate">{source.name}</span>
                   </div>
-                  {source.newItemsCount && source.newItemsCount > 0 && (
-                    <Badge className="bg-primary/20 text-primary-foreground hover:bg-primary/30 h-5">
-                      {source.newItemsCount > 99
-                        ? '99+'
-                        : source.newItemsCount}
-                    </Badge>
-                  )}
                 </SidebarMenuButton>
 
                 <SidebarMenuAction
