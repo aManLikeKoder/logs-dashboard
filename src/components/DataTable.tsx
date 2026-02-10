@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { format } from 'date-fns';
 import type { DataItem, DataSource } from '@/lib/types';
 import {
   Table,
@@ -59,9 +60,10 @@ const MobileDataCard = ({
   source: DataSource;
 }) => {
   const value = item[source.fieldPassword] ?? 'N/A';
-  const createdAtDate = new Date(
-    item.createdAt.seconds * 1000
-  ).toLocaleString();
+  const createdAtDate = format(
+    new Date(item.createdAt.seconds * 1000),
+    '(EEEE), MMMM d, yyyy h:mm a'
+  );
 
   return (
     <Card>
@@ -98,9 +100,10 @@ const DesktopDataRow = ({
   source: DataSource;
 }) => {
   const value = item[source.fieldPassword] ?? 'N/A';
-  const createdAtDate = new Date(
-    item.createdAt.seconds * 1000
-  ).toLocaleString();
+  const createdAtDate = format(
+    new Date(item.createdAt.seconds * 1000),
+    '(EEEE), MMMM d, yyyy h:mm a'
+  );
 
   return (
     <TableRow>
