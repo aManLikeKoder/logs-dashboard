@@ -62,7 +62,7 @@ const MobileDataCard = ({
   const value = item[source.fieldPassword] ?? 'N/A';
   const createdAtDate = format(
     new Date(item.createdAt.seconds * 1000),
-    '(EEEE), MMMM d, yyyy h:mm a'
+    "do (EEEE), MMMM, yyyy h:mm a"
   );
 
   return (
@@ -102,7 +102,7 @@ const DesktopDataRow = ({
   const value = item[source.fieldPassword] ?? 'N/A';
   const createdAtDate = format(
     new Date(item.createdAt.seconds * 1000),
-    '(EEEE), MMMM d, yyyy h:mm a'
+    "do (EEEE), MMMM, yyyy h:mm a"
   );
 
   return (
