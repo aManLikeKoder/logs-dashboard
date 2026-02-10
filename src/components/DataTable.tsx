@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from './ui/button';
 import { Copy, Check, Info } from 'lucide-react';
-import { Card, CardContent } from './ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import Pagination from './Pagination';
 
 interface DataTableProps {
@@ -51,60 +51,83 @@ const CopyButton = ({ value }: { value: string | undefined }) => {
   );
 };
 
-const DataRow = ({ item, source }: { item: DataItem; source: DataSource }) => {
+const MobileDataCard = ({
+  item,
+  source,
+}: {
+  item: DataItem;
+  source: DataSource;
+}) => {
   const value = item[source.fieldPassword] ?? 'N/A';
-  const createdAtDate = new Date(item.createdAt.seconds * 1000).toLocaleString();
+  const createdAtDate = new Date(
+    item.createdAt.seconds * 1000
+  ).toLocaleString();
 
   return (
-    <>
-      {/* Mobile Card View */}
-      <div className="md:hidden">
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex justify-between items-start">
-              <span className="font-semibold">{item.username}</span>
-              <CopyButton value={item.username} />
-            </div>
-            <div className="flex justify-between items-start">
-              <span className="font-mono text-sm text-muted-foreground truncate">{value}</span>
-              <CopyButton value={value} />
-            </div>
-            {source.displayPin && (
-              <div className="flex justify-between items-start">
-                <span className="font-mono text-sm text-muted-foreground">{item.pin ?? 'N/A'}</span>
-                <CopyButton value={item.pin} />
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground pt-2">{createdAtDate}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Desktop Table Row */}
-      <TableRow className="hidden md:table-row">
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <span>{item.username}</span>
-            <CopyButton value={item.username} />
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex justify-between items-start">
+          <span className="font-semibold">{item.username}</span>
+          <CopyButton value={item.username} />
+        </div>
+        <div className="flex justify-between items-start">
+          <span className="font-mono text-sm text-muted-foreground truncate">
+            {value}
+          </span>
+          <CopyButton value={value} />
+        </div>
+        {source.displayPin && (
+          <div className="flex justify-between items-start">
+            <span className="font-mono text-sm text-muted-foreground">
+              {item.pin ?? 'N/A'}
+            </span>
+            <CopyButton value={item.pin} />
           </div>
-        </TableCell>
+        )}
+        <p className="text-xs text-muted-foreground pt-2">{createdAtDate}</p>
+      </CardContent>
+    </Card>
+  );
+};
+
+const DesktopDataRow = ({
+  item,
+  source,
+}: {
+  item: DataItem;
+  source: DataSource;
+}) => {
+  const value = item[source.fieldPassword] ?? 'N/A';
+  const createdAtDate = new Date(
+    item.createdAt.seconds * 1000
+  ).toLocaleString();
+
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <span>{item.username}</span>
+          <CopyButton value={item.username} />
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2 font-mono text-sm">
+          <span className="truncate">{value}</span>
+          <CopyButton value={value} />
+        </div>
+      </TableCell>
+      {source.displayPin && (
         <TableCell>
           <div className="flex items-center gap-2 font-mono text-sm">
-            <span className="truncate">{value}</span>
-            <CopyButton value={value} />
+            <span>{item.pin ?? 'N/A'}</span>
+            <CopyButton value={item.pin} />
           </div>
         </TableCell>
-        {source.displayPin && (
-          <TableCell>
-            <div className="flex items-center gap-2 font-mono text-sm">
-              <span>{item.pin ?? 'N/A'}</span>
-              <CopyButton value={item.pin} />
-            </div>
-          </TableCell>
-        )}
-        <TableCell className="text-muted-foreground text-xs">{createdAtDate}</TableCell>
-      </TableRow>
-    </>
+      )}
+      <TableCell className="text-muted-foreground text-xs">
+        {createdAtDate}
+      </TableCell>
+    </TableRow>
   );
 };
 
@@ -134,7 +157,7 @@ export default function DataTable({
         {/* Mobile View */}
         <div className="md:hidden space-y-4">
           {data.map((item) => (
-            <DataRow key={item.id} item={item} source={source} />
+            <MobileDataCard key={item.id} item={item} source={source} />
           ))}
         </div>
 
@@ -151,7 +174,7 @@ export default function DataTable({
             </TableHeader>
             <TableBody>
               {data.map((item) => (
-                <DataRow key={item.id} item={item} source={source} />
+                <DesktopDataRow key={item.id} item={item} source={source} />
               ))}
             </TableBody>
           </Table>
@@ -159,11 +182,11 @@ export default function DataTable({
       </div>
       <div className="mt-6">
         <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={onPageChange}
-            totalCount={totalCount}
-            itemsPerPage={itemsPerPage}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={onPageChange}
+          totalCount={totalCount}
+          itemsPerPage={itemsPerPage}
         />
       </div>
     </div>
