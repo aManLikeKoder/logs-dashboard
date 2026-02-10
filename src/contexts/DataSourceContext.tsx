@@ -22,11 +22,15 @@ interface DataSourceContextType {
   addDataSource: (source: Omit<DataSource, 'id'>) => void;
   activeDataSource: EnrichedDataSource | null;
   setActiveDataSource: (source: EnrichedDataSource | null) => void;
+  defaultDataSourceId: string | null;
+  setDefaultDataSource: (sourceId: string) => void;
 }
 
 const DataSourceContext = createContext<DataSourceContextType | undefined>(
   undefined
 );
+
+const DEFAULT_DATA_SOURCE_ID_KEY = 'defaultDataSourceId';
 
 export function DataSourceProvider({ children }: { children: ReactNode }) {
   const [dataSources, setDataSources] = useState<EnrichedDataSource[]>(() => {
@@ -38,9 +42,24 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       }))
       .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
   });
-  const [activeDataSource, setActiveDataSource] =
+  const [activeDataSource, setActiveDataSourceState] =
     useState<EnrichedDataSource | null>(null);
+  const [defaultDataSourceId, setDefaultDataSourceId] = useState<string | null>(
+    null
+  );
   const { toast } = useToast();
+
+  useEffect(() => {
+    const savedDefaultId = localStorage.getItem(DEFAULT_DATA_SOURCE_ID_KEY);
+    if (savedDefaultId) {
+      setDefaultDataSourceId(savedDefaultId);
+      const defaultSource = dataSources.find((ds) => ds.id === savedDefaultId);
+      if (defaultSource && !activeDataSource) {
+        setActiveDataSourceState(defaultSource);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on initial mount
 
   const addDataSource = (source: Omit<DataSource, 'id'>) => {
     const newSource: EnrichedDataSource = {
@@ -56,6 +75,18 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setDefaultDataSource = (sourceId: string) => {
+    localStorage.setItem(DEFAULT_DATA_SOURCE_ID_KEY, sourceId);
+    setDefaultDataSourceId(sourceId);
+    const source = dataSources.find((s) => s.id === sourceId);
+    toast({
+      title: 'Default Source Set!',
+      description: `"${
+        source?.name
+      }" will now be loaded by default.`,
+    });
+  };
+
   const handleSetActiveDataSource = useCallback(
     (source: EnrichedDataSource | null) => {
       if (source) {
@@ -65,7 +96,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
           )
         );
       }
-      setActiveDataSource(source);
+      setActiveDataSourceState(source);
     },
     []
   );
@@ -116,6 +147,8 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         addDataSource,
         activeDataSource,
         setActiveDataSource: handleSetActiveDataSource,
+        defaultDataSourceId,
+        setDefaultDataSource,
       }}
     >
       {children}
