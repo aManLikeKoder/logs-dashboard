@@ -9,11 +9,30 @@ import {
   useMemo,
 } from 'react';
 import type { DataSource } from '@/lib/types';
-import { initialDataSources } from '@/lib/mock-data';
 import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  query,
+  orderBy,
+  Timestamp,
+  setDoc,
+} from 'firebase/firestore';
+import { Database } from 'lucide-react';
 
 export interface EnrichedDataSource extends DataSource {
   lastUpdatedAt: number;
+  newItemsCount: number;
+}
+
+interface DashboardSettings {
+  defaultDataSourceId: string | null;
 }
 
 interface DataSourceContextType {
@@ -35,124 +54,167 @@ const DataSourceContext = createContext<DataSourceContextType | undefined>(
   undefined
 );
 
-const DEFAULT_DATA_SOURCE_ID_KEY = 'defaultDataSourceId';
-const DATA_SOURCES_KEY = 'dataSources';
+const SETTINGS_DOC_ID = 'default-settings';
 
 export function DataSourceProvider({ children }: { children: ReactNode }) {
-  const [dataSources, setDataSources] = useState<EnrichedDataSource[]>(() => {
-    try {
-      const savedSources = localStorage.getItem(DATA_SOURCES_KEY);
-      if (savedSources) {
-        return JSON.parse(savedSources);
-      }
-    } catch (e) {
-      console.error('Failed to parse data sources from localStorage', e);
-    }
-    return initialDataSources
-      .map((ds, index) => ({
-        ...ds,
-        lastUpdatedAt: Date.now() - index * 1000 * 60,
-      }))
-      .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
-  });
+  const [dataSources, setDataSources] = useState<EnrichedDataSource[]>([]);
   const [activeDataSource, setActiveDataSourceState] =
     useState<EnrichedDataSource | null>(null);
   const [defaultDataSourceId, setDefaultDataSourceId] = useState<string | null>(
     null
   );
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
+  // Listen for data source changes from Firestore
   useEffect(() => {
-    try {
-      localStorage.setItem(DATA_SOURCES_KEY, JSON.stringify(dataSources));
-    } catch (e) {
-      console.error('Failed to save data sources to localStorage', e);
-    }
+    const q = query(
+      collection(db, 'dataSources'),
+      orderBy('name', 'asc')
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const sources: EnrichedDataSource[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          sources.push({
+            id: doc.id,
+            ...data,
+            lastUpdatedAt:
+              (data.lastUpdatedAt as Timestamp)?.toMillis() || Date.now(),
+            newItemsCount: 0, // Placeholder for future implementation
+          } as EnrichedDataSource);
+        });
+        setDataSources(sources);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching data sources:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Firestore Error',
+          description: 'Could not load data sources. Check console for details.',
+        });
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [toast]);
+
+  // Listen for settings changes and set initial active data source
+  useEffect(() => {
+    const settingsDocRef = doc(db, 'Dashboard-settings', SETTINGS_DOC_ID);
+    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
+      let newDefaultId: string | null = null;
+      if (docSnap.exists()) {
+        const settings = docSnap.data() as DashboardSettings;
+        newDefaultId = settings.defaultDataSourceId;
+        setDefaultDataSourceId(newDefaultId);
+      }
+
+      if (dataSources.length > 0) {
+        const sourceToActivate = 
+          dataSources.find((ds) => ds.id === newDefaultId) || dataSources[0];
+        setActiveDataSourceState(sourceToActivate);
+      }
+    });
+
+    return () => unsubscribe();
   }, [dataSources]);
 
-  useEffect(() => {
-    const savedDefaultId = localStorage.getItem(DEFAULT_DATA_SOURCE_ID_KEY);
-    if (savedDefaultId) {
-      setDefaultDataSourceId(savedDefaultId);
-      const defaultSource = dataSources.find((ds) => ds.id === savedDefaultId);
-      if (defaultSource && !activeDataSource) {
-        setActiveDataSourceState(defaultSource);
-      }
-    } else if (dataSources.length > 0 && !activeDataSource) {
-      // If no default is set, activate the most recently updated one.
-      const sorted = [...dataSources].sort(
-        (a, b) => b.lastUpdatedAt - a.lastUpdatedAt
-      );
-      setActiveDataSourceState(sorted[0]);
+  const addDataSource = async (source: Omit<DataSource, 'id'>) => {
+    try {
+      await addDoc(collection(db, 'dataSources'), {
+        ...source,
+        lastUpdatedAt: serverTimestamp(),
+      });
+      toast({
+        title: 'Success!',
+        description: `Data source "${source.name}" has been added.`,
+      });
+    } catch (error: any) {
+      console.error('Error adding data source: ', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: `Failed to add data source: ${error.message}`,
+      });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only on initial mount
-
-  const addDataSource = (source: Omit<DataSource, 'id'>) => {
-    const newSource: EnrichedDataSource = {
-      ...source,
-      id: source.name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now(),
-      lastUpdatedAt: Date.now(),
-    };
-    setDataSources((prev) => [newSource, ...prev]);
-    setActiveDataSourceState(newSource); // Make the new source active
-    toast({
-      title: 'Success!',
-      description: `Data source "${newSource.name}" has been added.`,
-    });
   };
 
-  const updateDataSource = (
+  const updateDataSource = async (
     sourceId: string,
     updatedSourceData: Omit<DataSource, 'id'>
   ) => {
-    const fullUpdatedSource = {
-      ...updatedSourceData,
-      id: sourceId,
-      lastUpdatedAt: Date.now(),
-    };
-    setDataSources((prev) =>
-      prev.map((ds) => (ds.id === sourceId ? fullUpdatedSource : ds))
-    );
-    if (activeDataSource?.id === sourceId) {
-      setActiveDataSourceState(fullUpdatedSource);
+    const docRef = doc(db, 'dataSources', sourceId);
+    try {
+      await updateDoc(docRef, {
+        ...updatedSourceData,
+        lastUpdatedAt: serverTimestamp(),
+      });
+      toast({
+        title: 'Success!',
+        description: `Data source "${updatedSourceData.name}" has been updated.`,
+      });
+    } catch (error: any) {
+      console.error('Error updating data source: ', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: `Failed to update data source: ${error.message}`,
+      });
     }
-    toast({
-      title: 'Success!',
-      description: `Data source "${updatedSourceData.name}" has been updated.`,
-    });
   };
 
-  const deleteDataSource = (sourceId: string) => {
-    const sourceName = dataSources.find(ds => ds.id === sourceId)?.name;
-    setDataSources((prev) => prev.filter((ds) => ds.id !== sourceId));
-
-    if (activeDataSource?.id === sourceId) {
-      const remainingSources = dataSources.filter((ds) => ds.id !== sourceId);
-      const sorted = [...remainingSources].sort(
-        (a, b) => b.lastUpdatedAt - a.lastUpdatedAt
-      );
-      setActiveDataSourceState(sorted.length > 0 ? sorted[0] : null);
-    }
-    if (defaultDataSourceId === sourceId) {
-      localStorage.removeItem(DEFAULT_DATA_SOURCE_ID_KEY);
-      setDefaultDataSourceId(null);
-    }
-
-    toast({
+  const deleteDataSource = async (sourceId: string) => {
+    const sourceName = dataSources.find((ds) => ds.id === sourceId)?.name;
+    const docRef = doc(db, 'dataSources', sourceId);
+    try {
+      await deleteDoc(docRef);
+      toast({
         title: 'Source Deleted',
         description: `Data source "${sourceName}" has been deleted.`,
       });
+      if (defaultDataSourceId === sourceId) {
+        await setDefaultDataSource(''); // Unset default
+      }
+    } catch (error: any) {
+      console.error('Error deleting data source: ', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: `Failed to delete data source: ${error.message}`,
+      });
+    }
   };
 
-  const setDefaultDataSource = (sourceId: string) => {
-    localStorage.setItem(DEFAULT_DATA_SOURCE_ID_KEY, sourceId);
-    setDefaultDataSourceId(sourceId);
-    const source = dataSources.find((s) => s.id === sourceId);
-    toast({
-      title: 'Default Source Set!',
-      description: `"${source?.name}" will now be loaded by default.`,
-    });
+  const setDefaultDataSource = async (sourceId: string) => {
+    const settingsDocRef = doc(db, 'Dashboard-settings', SETTINGS_DOC_ID);
+    try {
+      await setDoc(
+        settingsDocRef,
+        { defaultDataSourceId: sourceId || null },
+        { merge: true }
+      );
+      if (sourceId) {
+        const source = dataSources.find((s) => s.id === sourceId);
+        toast({
+          title: 'Default Source Set!',
+          description: `"${
+            source?.name || 'None'
+          }" will now be loaded by default.`,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error setting default data source: ', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: `Failed to set default: ${error.message}`,
+      });
+    }
   };
 
   const handleSetActiveDataSource = useCallback(
@@ -162,33 +224,48 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const updateSourceTimestamp = (sourceId: string) => {
-    setDataSources((prev) =>
-      prev.map((ds) =>
-        ds.id === sourceId ? { ...ds, lastUpdatedAt: Date.now() } : ds
-      )
-    );
+  const updateSourceTimestamp = async (sourceId: string) => {
+    const docRef = doc(db, 'dataSources', sourceId);
+    try {
+      await updateDoc(docRef, { lastUpdatedAt: serverTimestamp() });
+    } catch (error) {
+      console.error('Error updating timestamp: ', error);
+    }
   };
-
+  
   const sortedDataSources = useMemo(() => {
     return [...dataSources].sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
   }, [dataSources]);
 
+  const contextValue = useMemo(
+    () => ({
+      dataSources: sortedDataSources,
+      addDataSource,
+      updateDataSource,
+      deleteDataSource,
+      activeDataSource,
+      setActiveDataSource: handleSetActiveDataSource,
+      defaultDataSourceId,
+      setDefaultDataSource,
+      updateSourceTimestamp,
+    }),
+    [
+      sortedDataSources,
+      activeDataSource,
+      defaultDataSourceId,
+      handleSetActiveDataSource,
+    ]
+  );
+
   return (
-    <DataSourceContext.Provider
-      value={{
-        dataSources: sortedDataSources,
-        addDataSource,
-        updateDataSource,
-        deleteDataSource,
-        activeDataSource,
-        setActiveDataSource: handleSetActiveDataSource,
-        defaultDataSourceId,
-        setDefaultDataSource,
-        updateSourceTimestamp,
-      }}
-    >
-      {children}
+    <DataSourceContext.Provider value={contextValue}>
+      {isLoading ? (
+        <div className="flex h-screen w-full items-center justify-center">
+          <Database className="h-12 w-12 animate-pulse text-primary" />
+        </div>
+      ) : (
+        children
+      )}
     </DataSourceContext.Provider>
   );
 }

@@ -102,6 +102,7 @@ export default function DataSourceSidebar() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
                         onSelect={() => setDefaultDataSource(source.id)}
+                        disabled={defaultDataSourceId === source.id}
                       >
                         <Star className="mr-2 h-4 w-4" />
                         Set as Default
