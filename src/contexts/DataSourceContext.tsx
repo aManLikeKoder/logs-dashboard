@@ -111,6 +111,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         });
 
         setDataSources((prevSources) => {
+          // Preserve the newItemsCount from the client-side state
           return sourcesFromDb.map((source) => {
             const existing = prevSources.find((s) => s.id === source.id);
             return {
@@ -148,14 +149,18 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
     dataSources.forEach((source) => {
       const firebase = getFirebaseForSource(source);
-      if (!firebase) return;
+      if (!firebase) {
+        console.error(
+          `Could not get Firebase instance for ${source.name}, skipping listener.`
+        );
+        return;
+      }
       const { firestore } = firebase;
 
-      // Query for documents that might be new
       const q = query(
         collection(firestore, source.collectionPath),
         orderBy(source.fieldCreatedAt, 'desc'),
-        limit(50) // Check the latest 50 docs for performance
+        limit(50)
       );
 
       const unsubscribe = onSnapshot(
@@ -169,10 +174,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
           snapshot.forEach((doc) => {
             const docData = doc.data();
-            if (docData && docData[source.fieldCreatedAt]) {
-              const docTimestamp = (
-                docData[source.fieldCreatedAt] as Timestamp
-              ).toMillis();
+            const createdAtField = docData[source.fieldCreatedAt];
+
+            if (createdAtField && typeof createdAtField.toMillis === 'function') {
+              const docTimestamp = (createdAtField as Timestamp).toMillis();
               if (docTimestamp > lastViewedTimestamp) {
                 newItemsCount++;
               }
@@ -182,21 +187,38 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
             }
           });
 
-          setDataSources((prev) =>
-            prev.map((s) =>
-              s.id === source.id ? { ...s, newItemsCount } : s
-            )
-          );
+          setDataSources((currentDataSources) => {
+            const targetSource = currentDataSources.find(
+              (s) => s.id === source.id
+            );
 
-          if (
-            latestTimestampMillis > 0 &&
-            latestTimestampMillis > source.lastUpdatedAt
-          ) {
-            const mainDbDocRef = doc(db, 'dataSources', source.id);
-            updateDoc(mainDbDocRef, {
-              lastUpdatedAt: Timestamp.fromMillis(latestTimestampMillis),
-            });
-          }
+            if (!targetSource) {
+              return currentDataSources;
+            }
+
+            if (
+              latestTimestampMillis > 0 &&
+              latestTimestampMillis > targetSource.lastUpdatedAt
+            ) {
+              const mainDbDocRef = doc(db, 'dataSources', source.id);
+              updateDoc(mainDbDocRef, {
+                lastUpdatedAt: Timestamp.fromMillis(latestTimestampMillis),
+              }).catch((err) => {
+                console.error(
+                  `Failed to update lastUpdatedAt for ${source.name}`,
+                  err
+                );
+              });
+            }
+
+            if (targetSource.newItemsCount === newItemsCount) {
+              return currentDataSources;
+            }
+
+            return currentDataSources.map((s) =>
+              s.id === source.id ? { ...s, newItemsCount } : s
+            );
+          });
         },
         (err) => {
           console.error(
@@ -209,6 +231,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribers.forEach((unsub) => unsub());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceIds, viewTimestamps]);
 
   // Listen for settings changes and set initial active data source
@@ -381,6 +404,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       defaultDataSourceId,
       setDefaultDataSource,
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       dataSources,
       activeDataSource,
@@ -409,5 +433,3 @@ export function useDataSources() {
   }
   return context;
 }
-
-    
