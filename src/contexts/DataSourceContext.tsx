@@ -23,8 +23,10 @@ import {
   orderBy,
   Timestamp,
   setDoc,
+  limit,
 } from 'firebase/firestore';
 import { Database } from 'lucide-react';
+import { getFirebaseForSource } from '@/lib/firebase-manager';
 
 export interface EnrichedDataSource extends DataSource {
   lastUpdatedAt: number;
@@ -47,7 +49,6 @@ interface DataSourceContextType {
   setActiveDataSource: (source: EnrichedDataSource | null) => void;
   defaultDataSourceId: string | null;
   setDefaultDataSource: (sourceId: string) => void;
-  updateSourceTimestamp: (sourceId: string) => void;
 }
 
 const DataSourceContext = createContext<DataSourceContextType | undefined>(
@@ -65,8 +66,22 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   );
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const [viewTimestamps, setViewTimestamps] = useState<Record<string, number>>(
+    {}
+  );
 
-  // Listen for data source changes from Firestore
+  useEffect(() => {
+    try {
+      const storedTimestamps = localStorage.getItem('viewTimestamps');
+      if (storedTimestamps) {
+        setViewTimestamps(JSON.parse(storedTimestamps));
+      }
+    } catch (e) {
+      console.error('Could not parse view timestamps from local storage', e);
+    }
+  }, []);
+
+  // Listen for data source changes from Firestore and sort them
   useEffect(() => {
     const q = query(
       collection(db, 'dataSources'),
@@ -75,10 +90,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
-        const sources: EnrichedDataSource[] = [];
+        const sourcesFromDb: Omit<EnrichedDataSource, 'newItemsCount'>[] = [];
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-          sources.push({
+          sourcesFromDb.push({
             id: doc.id,
             name: data.name,
             collectionPath: data.collection,
@@ -92,10 +107,19 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
             fieldPin: data.fieldPin,
             lastUpdatedAt:
               (data.lastUpdatedAt as Timestamp)?.toMillis() || 0,
-            newItemsCount: 0,
-          } as EnrichedDataSource);
+          });
         });
-        setDataSources(sources);
+
+        setDataSources((prevSources) => {
+          return sourcesFromDb.map((source) => {
+            const existing = prevSources.find((s) => s.id === source.id);
+            return {
+              ...source,
+              newItemsCount: existing?.newItemsCount || 0,
+            };
+          });
+        });
+
         setIsLoading(false);
       },
       (error) => {
@@ -113,6 +137,75 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, [toast]);
 
+  const sourceIds = useMemo(
+    () => dataSources.map((s) => s.id).join(','),
+    [dataSources]
+  );
+
+  // Set up listeners for each source to detect new submissions
+  useEffect(() => {
+    const unsubscribers: (() => void)[] = [];
+
+    dataSources.forEach((source) => {
+      const firebase = getFirebaseForSource(source);
+      if (!firebase) return;
+      const { firestore } = firebase;
+
+      // Query for documents that might be new
+      const q = query(
+        collection(firestore, source.collectionPath),
+        orderBy(source.fieldCreatedAt, 'desc'),
+        limit(50) // Check the latest 50 docs for performance
+      );
+
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          if (snapshot.metadata.hasPendingWrites) return;
+
+          const lastViewedTimestamp =
+            viewTimestamps[source.id] || source.lastUpdatedAt;
+          let newItemsCount = 0;
+          let latestTimestampMillis = 0;
+
+          snapshot.forEach((doc) => {
+            const docData = doc.data();
+            if (docData && docData[source.fieldCreatedAt]) {
+              const docTimestamp = (
+                docData[source.fieldCreatedAt] as Timestamp
+              ).toMillis();
+              if (docTimestamp > lastViewedTimestamp) {
+                newItemsCount++;
+              }
+              if (docTimestamp > latestTimestampMillis) {
+                latestTimestampMillis = docTimestamp;
+              }
+            }
+          });
+
+          setDataSources((prev) =>
+            prev.map((s) =>
+              s.id === source.id ? { ...s, newItemsCount } : s
+            )
+          );
+
+          if (latestTimestampMillis > source.lastUpdatedAt) {
+            const mainDbDocRef = doc(db, 'dataSources', source.id);
+            updateDoc(mainDbDocRef, {
+              lastUpdatedAt: Timestamp.fromMillis(latestTimestampMillis),
+            });
+          }
+        },
+        (err) => {
+          // This can happen if credentials are wrong, etc. Don't spam console.
+        }
+      );
+      unsubscribers.push(unsubscribe);
+    });
+
+    return () => unsubscribers.forEach((unsub) => unsub());
+  }, [sourceIds, viewTimestamps]);
+
   // Listen for settings changes and set initial active data source
   useEffect(() => {
     const settingsDocRef = doc(db, 'Dashboard-settings', SETTINGS_DOC_ID);
@@ -127,7 +220,9 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       if (dataSources.length > 0 && !activeDataSource) {
         const sourceToActivate =
           dataSources.find((ds) => ds.id === newDefaultId) || dataSources[0];
-        setActiveDataSourceState(sourceToActivate);
+        if (sourceToActivate) {
+          setActiveDataSourceState(sourceToActivate);
+        }
       }
     });
 
@@ -248,19 +343,27 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   const handleSetActiveDataSource = useCallback(
     (source: EnrichedDataSource | null) => {
+      if (source) {
+        const now = Date.now();
+        const newTimestamps = { ...viewTimestamps, [source.id]: now };
+        setViewTimestamps(newTimestamps);
+        try {
+          localStorage.setItem('viewTimestamps', JSON.stringify(newTimestamps));
+        } catch (e) {
+          console.error('Failed to write to local storage', e);
+        }
+
+        // Reset newItemsCount for the active source
+        setDataSources((prevSources) =>
+          prevSources.map((s) =>
+            s.id === source.id ? { ...s, newItemsCount: 0 } : s
+          )
+        );
+      }
       setActiveDataSourceState(source);
     },
-    []
+    [viewTimestamps]
   );
-
-  const updateSourceTimestamp = async (sourceId: string) => {
-    const docRef = doc(db, 'dataSources', sourceId);
-    try {
-      await updateDoc(docRef, { lastUpdatedAt: serverTimestamp() });
-    } catch (error) {
-      console.error('Error updating timestamp: ', error);
-    }
-  };
 
   const contextValue = useMemo(
     () => ({
@@ -272,7 +375,6 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       setActiveDataSource: handleSetActiveDataSource,
       defaultDataSourceId,
       setDefaultDataSource,
-      updateSourceTimestamp,
     }),
     [
       dataSources,

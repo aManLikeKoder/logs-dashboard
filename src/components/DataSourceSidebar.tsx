@@ -28,7 +28,7 @@ import {
 import AddDataSourceDialog from './AddDataSourceDialog';
 import DeleteDataSourceDialog from './DeleteDataSourceDialog';
 import { Button } from './ui/button';
-import { cn } from '@/lib/utils';
+import { Badge } from './ui/badge';
 
 export default function DataSourceSidebar() {
   const {
@@ -82,14 +82,19 @@ export default function DataSourceSidebar() {
                 <SidebarMenuButton
                   onClick={() => setActiveDataSource(source)}
                   isActive={activeDataSource?.id === source.id}
-                  className="pr-8"
+                  className="pr-8 justify-between"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 truncate">
                     {defaultDataSourceId === source.id && (
                       <Star className="h-4 w-4 shrink-0 text-amber-400 fill-amber-400" />
                     )}
                     <span className="truncate">{source.name}</span>
                   </div>
+                  {source.newItemsCount > 0 && (
+                    <Badge variant="secondary" className="h-5 px-2">
+                      {source.newItemsCount > 99 ? '99+' : source.newItemsCount}
+                    </Badge>
+                  )}
                 </SidebarMenuButton>
 
                 <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/menu-item:opacity-100 focus-within:opacity-100 transition-opacity">

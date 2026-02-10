@@ -39,7 +39,7 @@ const useDebounce = <T>(value: T, delay: number): T => {
 };
 
 export default function DataSourceContent() {
-  const { activeDataSource, updateSourceTimestamp } = useDataSources();
+  const { activeDataSource } = useDataSources();
   const { toggleSidebar } = useSidebar();
   const { toast } = useToast();
 
@@ -127,7 +127,6 @@ export default function DataSourceContent() {
       });
 
       setData(newData);
-      updateSourceTimestamp(activeDataSource.id);
 
     } catch (err: any) {
       console.error('Failed to fetch data', err);
