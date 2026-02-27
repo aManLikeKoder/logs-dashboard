@@ -1,30 +1,15 @@
-'use client';
-import { useState } from 'react';
-import { DataSourceProvider } from '@/contexts/DataSourceContext';
-import DataSourceSidebar from '@/components/DataSourceSidebar';
-import DataSourceContent from '@/components/DataSourceContent';
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarInset,
-} from '@/components/ui/sidebar';
+import React from 'react';
+import SearchBar from './SearchBar';
+import LogsResults from './LogsResults';
 
-export default function Home() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  return (
-    <DataSourceProvider>
-      <SidebarProvider
-        open={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        defaultOpen={true}
-      >
-        <Sidebar>
-          <DataSourceSidebar />
-        </Sidebar>
-        <SidebarInset>
-          <DataSourceContent />
-        </SidebarInset>
-      </SidebarProvider>
-    </DataSourceProvider>
-  );
-}
+const Page: React.FC = () => {
+    return (
+        <div>
+            <h1>Logs Dashboard</h1>
+            <SearchBar />
+            <LogsResults />
+        </div>
+    );
+};
+
+export default Page;
