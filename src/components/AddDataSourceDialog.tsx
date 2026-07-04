@@ -210,7 +210,7 @@ export default function AddDataSourceDialog({
         if (!isSubmitting) onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] grid-rows-[auto_1fr_auto] p-4 sm:max-w-[800px] sm:p-6">
+      <DialogContent className="h-[calc(100dvh-1rem)] max-h-[52rem] w-[calc(100%-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] p-4 sm:h-[90dvh] sm:max-w-[800px] sm:p-6">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit Data Source' : 'Add New Data Source'}
@@ -225,10 +225,10 @@ export default function AddDataSourceDialog({
           <form
             id="add-source-form"
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-4 overflow-hidden"
+            className="min-h-0 overflow-hidden"
             aria-busy={isSubmitting}
           >
-            <ScrollArea className="h-[62vh] pr-3 md:h-auto md:max-h-[65vh] md:pr-6">
+            <ScrollArea className="h-full pr-3 md:pr-6">
               <div className="space-y-5 pb-1">
                 <section className="space-y-4 rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
