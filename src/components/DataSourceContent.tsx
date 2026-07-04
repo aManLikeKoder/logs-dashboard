@@ -18,14 +18,21 @@ import Welcome from './Welcome';
 import DataTable from './DataTable';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { RefreshCw, Search, Loader2, Menu, AlertTriangle } from 'lucide-react';
+import {
+  RefreshCw,
+  Search,
+  Loader2,
+  Menu,
+  AlertTriangle,
+  X,
+} from 'lucide-react';
 import type { DataItem } from '@/lib/types';
 import { useSidebar } from '@/components/ui/sidebar';
 import { getFirebaseForSource } from '@/lib/firebase-manager';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-const useDebounce = <T>(value: T, delay: number): T => {
+const useDebounce = <T,>(value: T, delay: number): T => {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -55,7 +62,10 @@ export default function DataSourceContent() {
   const [totalCount, setTotalCount] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 500);
+  const [searchSourceId, setSearchSourceId] = useState<string | null>(null);
+  const currentSearchQuery =
+    searchSourceId === activeDataSource?.id ? searchQuery : '';
+  const debouncedSearchQuery = useDebounce(currentSearchQuery.trim(), 400);
 
   const ITEMS_PER_PAGE = 20;
 
@@ -97,7 +107,17 @@ export default function DataSourceContent() {
       setTotalCount(count);
       setTotalPages(Math.ceil(count / ITEMS_PER_PAGE));
       
-      let finalQuery = query(baseQuery, orderBy(activeDataSource.fieldCreatedAt, 'desc'), limit(ITEMS_PER_PAGE));
+      let finalQuery = debouncedSearchQuery
+        ? query(
+            baseQuery,
+            orderBy(activeDataSource.fieldUsername),
+            limit(ITEMS_PER_PAGE)
+          )
+        : query(
+            baseQuery,
+            orderBy(activeDataSource.fieldCreatedAt, 'desc'),
+            limit(ITEMS_PER_PAGE)
+          );
       
       if (currentPage > 1 && pageToLastDoc[currentPage - 1]) {
         finalQuery = query(finalQuery, startAfter(pageToLastDoc[currentPage - 1]));
@@ -151,6 +171,11 @@ export default function DataSourceContent() {
   }, [debouncedSearchQuery, activeDataSource]);
 
   useEffect(() => {
+    setSearchQuery('');
+    setSearchSourceId(activeDataSource?.id || null);
+  }, [activeDataSource?.id]);
+
+  useEffect(() => {
     if (activeDataSource) {
       fetchSourceData();
     } else {
@@ -162,46 +187,108 @@ export default function DataSourceContent() {
   const dataKey = useMemo(() => `${activeDataSource?.id}-${debouncedSearchQuery}-${currentPage}`, [activeDataSource, debouncedSearchQuery, currentPage]);
 
   if (!activeDataSource) {
-    return <Welcome />;
+    return (
+      <div className="flex h-full flex-col">
+        <div className="sticky top-0 z-20 border-b bg-background/95 p-3 backdrop-blur md:hidden">
+          <Button
+            variant="outline"
+            className="h-11"
+            onClick={toggleSidebar}
+            aria-label="Open data sources"
+          >
+            <Menu className="mr-2 h-5 w-5" />
+            Sources
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <Welcome />
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-full flex-col p-4 md:p-6 lg:p-8">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-2">
+    <div className="flex h-full flex-col md:p-6 lg:p-8">
+      <header className="sticky top-0 z-20 mb-3 border-b bg-background/95 p-3 backdrop-blur md:static md:mb-6 md:flex md:items-center md:justify-between md:gap-4 md:border-0 md:bg-transparent md:p-0">
+        <div className="flex min-w-0 items-center gap-2">
             <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden"
+                variant="outline"
+                className="h-11 px-3 md:hidden"
                 onClick={toggleSidebar}
+                aria-label="Open data sources"
             >
-                <Menu className="h-6 w-6" />
+                <Menu className="mr-2 h-5 w-5" />
+                Sources
             </Button>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-            {activeDataSource.name}
+            <h1
+              className="min-w-0 flex-1 truncate text-xl font-bold text-foreground md:text-3xl"
+              title={activeDataSource.name}
+            >
+              {activeDataSource.name}
             </h1>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 shrink-0 md:hidden"
+              onClick={fetchSourceData}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="sr-only">Refresh</span>
+            </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative w-full md:w-64">
+        <div className="mt-3 flex items-center gap-2 md:mt-0">
+          <div className="relative w-full md:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search by username (prefix)..."
-              className="pl-10"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Username starts with…"
+              className="pl-10 pr-10"
+              value={currentSearchQuery}
+              aria-label="Search entries by username"
+              onChange={(e) => {
+                setSearchSourceId(activeDataSource.id);
+                setSearchQuery(e.target.value);
+              }}
             />
+            {currentSearchQuery && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear username search"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
-          <Button variant="outline" size="icon" onClick={fetchSourceData} disabled={isLoading}>
+          <Button
+            variant="outline"
+            size="icon"
+            className="hidden md:inline-flex"
+            onClick={fetchSourceData}
+            disabled={isLoading}
+          >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             <span className="sr-only">Refresh</span>
           </Button>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-0 md:pb-0">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center">
+          <div
+            className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm">Loading entries…</p>
           </div>
         ) : error ? (
             <Alert variant="destructive" className="my-4">
@@ -219,6 +306,7 @@ export default function DataSourceContent() {
             onPageChange={setCurrentPage}
             totalCount={totalCount}
             itemsPerPage={ITEMS_PER_PAGE}
+            hasActiveSearch={Boolean(debouncedSearchQuery)}
           />
         )}
       </div>

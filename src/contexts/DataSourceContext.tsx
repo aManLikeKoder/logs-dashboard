@@ -24,6 +24,8 @@ import {
   Timestamp,
   setDoc,
   limit,
+  where,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { Database } from 'lucide-react';
 import { getFirebaseForSource } from '@/lib/firebase-manager';
@@ -39,12 +41,12 @@ interface DashboardSettings {
 
 interface DataSourceContextType {
   dataSources: EnrichedDataSource[];
-  addDataSource: (source: Omit<DataSource, 'id'>) => void;
+  addDataSource: (source: Omit<DataSource, 'id'>) => Promise<boolean>;
   updateDataSource: (
     sourceId: string,
     updatedSource: Omit<DataSource, 'id'>
-  ) => void;
-  deleteDataSource: (sourceId: string) => void;
+  ) => Promise<boolean>;
+  deleteDataSource: (sourceId: string) => Promise<boolean>;
   activeDataSource: EnrichedDataSource | null;
   setActiveDataSource: (source: EnrichedDataSource | null) => void;
   defaultDataSourceId: string | null;
@@ -69,6 +71,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   const [viewTimestamps, setViewTimestamps] = useState<Record<string, number>>(
     {}
   );
+  const [timestampsHydrated, setTimestampsHydrated] = useState(false);
 
   useEffect(() => {
     try {
@@ -78,8 +81,40 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       console.error('Could not parse view timestamps from local storage', e);
+    } finally {
+      setTimestampsHydrated(true);
     }
   }, []);
+
+  const updateViewTimestamp = useCallback(
+    (sourceId: string, timestamp: number) => {
+      setViewTimestamps((currentTimestamps) => {
+        if (
+          sourceId in currentTimestamps &&
+          currentTimestamps[sourceId] >= timestamp
+        ) {
+          return currentTimestamps;
+        }
+
+        const updatedTimestamps = {
+          ...currentTimestamps,
+          [sourceId]: timestamp,
+        };
+
+        try {
+          localStorage.setItem(
+            'viewTimestamps',
+            JSON.stringify(updatedTimestamps)
+          );
+        } catch (error) {
+          console.error('Failed to write view timestamps to local storage', error);
+        }
+
+        return updatedTimestamps;
+      });
+    },
+    []
+  );
 
   // Listen for data source changes from Firestore and sort them
   useEffect(() => {
@@ -138,14 +173,45 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, [toast]);
 
-  const sourceIds = useMemo(
-    () => dataSources.map((s) => s.id).join(','),
+  const sourceListenerKey = useMemo(
+    () =>
+      dataSources
+        .map((source) =>
+          JSON.stringify({
+            id: source.id,
+            collectionPath: source.collectionPath,
+            fieldCreatedAt: source.fieldCreatedAt,
+            firebaseConfig: source.firebaseConfig,
+          })
+        )
+        .sort()
+        .join('|'),
     [dataSources]
   );
 
-  // Set up listeners for each source to detect new submissions
+  // Listen only for the newest record, then use an aggregate query for an
+  // exact unread count without downloading every new document.
   useEffect(() => {
+    if (!timestampsHydrated) return;
+
     const unsubscribers: (() => void)[] = [];
+    const countRequestVersions = new Map<string, number>();
+    const latestKnownTimestamps = new Map(
+      dataSources.map((source) => [source.id, source.lastUpdatedAt])
+    );
+    let cancelled = false;
+
+    const setNewItemsCount = (sourceId: string, count: number) => {
+      if (cancelled) return;
+
+      setDataSources((currentDataSources) =>
+        currentDataSources.map((source) =>
+          source.id === sourceId && source.newItemsCount !== count
+            ? { ...source, newItemsCount: count }
+            : source
+        )
+      );
+    };
 
     dataSources.forEach((source) => {
       const firebase = getFirebaseForSource(source);
@@ -160,65 +226,95 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       const q = query(
         collection(firestore, source.collectionPath),
         orderBy(source.fieldCreatedAt, 'desc'),
-        limit(50)
+        limit(1)
       );
 
       const unsubscribe = onSnapshot(
         q,
-        (snapshot) => {
+        async (snapshot) => {
           if (snapshot.metadata.hasPendingWrites) return;
 
-          const lastViewedTimestamp = viewTimestamps[source.id] || 0;
-          let newItemsCount = 0;
-          let latestTimestampMillis = 0;
+          const newestDocument = snapshot.docs[0];
+          const createdAtField = newestDocument?.data()[source.fieldCreatedAt];
+          const latestTimestampMillis =
+            createdAtField && typeof createdAtField.toMillis === 'function'
+              ? (createdAtField as Timestamp).toMillis()
+              : 0;
 
-          snapshot.forEach((doc) => {
-            const docData = doc.data();
-            const createdAtField = docData[source.fieldCreatedAt];
+          const latestKnownTimestamp =
+            latestKnownTimestamps.get(source.id) || 0;
+          if (
+            latestTimestampMillis > 0 &&
+            latestTimestampMillis > latestKnownTimestamp
+          ) {
+            latestKnownTimestamps.set(source.id, latestTimestampMillis);
+            updateDoc(doc(db, 'dataSources', source.id), {
+              lastUpdatedAt: Timestamp.fromMillis(latestTimestampMillis),
+            }).catch((error) => {
+              console.error(
+                `Failed to update lastUpdatedAt for ${source.name}`,
+                error
+              );
+            });
+          }
 
-            if (createdAtField && typeof createdAtField.toMillis === 'function') {
-              const docTimestamp = (createdAtField as Timestamp).toMillis();
-              if (docTimestamp > lastViewedTimestamp) {
-                newItemsCount++;
-              }
-              if (docTimestamp > latestTimestampMillis) {
-                latestTimestampMillis = docTimestamp;
-              }
-            }
-          });
+          const lastViewedTimestamp = viewTimestamps[source.id];
 
-          setDataSources((currentDataSources) => {
-            const targetSource = currentDataSources.find(
-              (s) => s.id === source.id
+          // Existing records establish the initial baseline and are not
+          // incorrectly presented as new the first time this browser visits.
+          if (lastViewedTimestamp === undefined) {
+            updateViewTimestamp(
+              source.id,
+              latestTimestampMillis
             );
+            setNewItemsCount(source.id, 0);
+            return;
+          }
 
-            if (!targetSource) {
-              return currentDataSources;
+          // Records arriving while the source is open are already visible.
+          if (activeDataSource?.id === source.id) {
+            if (latestTimestampMillis > 0) {
+              updateViewTimestamp(source.id, latestTimestampMillis);
             }
+            setNewItemsCount(source.id, 0);
+            return;
+          }
+
+          if (
+            latestTimestampMillis === 0 ||
+            latestTimestampMillis <= lastViewedTimestamp
+          ) {
+            setNewItemsCount(source.id, 0);
+            return;
+          }
+
+          const requestVersion =
+            (countRequestVersions.get(source.id) || 0) + 1;
+          countRequestVersions.set(source.id, requestVersion);
+
+          try {
+            const newRecordsQuery = query(
+              collection(firestore, source.collectionPath),
+              where(
+                source.fieldCreatedAt,
+                '>',
+                Timestamp.fromMillis(lastViewedTimestamp)
+              )
+            );
+            const countSnapshot = await getCountFromServer(newRecordsQuery);
 
             if (
-              latestTimestampMillis > 0 &&
-              latestTimestampMillis > targetSource.lastUpdatedAt
+              !cancelled &&
+              countRequestVersions.get(source.id) === requestVersion
             ) {
-              const mainDbDocRef = doc(db, 'dataSources', source.id);
-              updateDoc(mainDbDocRef, {
-                lastUpdatedAt: Timestamp.fromMillis(latestTimestampMillis),
-              }).catch((err) => {
-                console.error(
-                  `Failed to update lastUpdatedAt for ${source.name}`,
-                  err
-                );
-              });
+              setNewItemsCount(source.id, countSnapshot.data().count);
             }
-
-            if (targetSource.newItemsCount === newItemsCount) {
-              return currentDataSources;
-            }
-
-            return currentDataSources.map((s) =>
-              s.id === source.id ? { ...s, newItemsCount } : s
+          } catch (error) {
+            console.error(
+              `Failed to count new records for ${source.name} (${source.id})`,
+              error
             );
-          });
+          }
         },
         (err) => {
           console.error(
@@ -230,9 +326,18 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       unsubscribers.push(unsubscribe);
     });
 
-    return () => unsubscribers.forEach((unsub) => unsub());
+    return () => {
+      cancelled = true;
+      unsubscribers.forEach((unsub) => unsub());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceIds, viewTimestamps]);
+  }, [
+    sourceListenerKey,
+    viewTimestamps,
+    activeDataSource?.id,
+    timestampsHydrated,
+    updateViewTimestamp,
+  ]);
 
   // Listen for settings changes and set initial active data source
   useEffect(() => {
@@ -275,6 +380,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         title: 'Success!',
         description: `Data source "${source.name}" has been added.`,
       });
+      return true;
     } catch (error: any) {
       console.error('Error adding data source: ', error);
       toast({
@@ -282,6 +388,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         title: 'Error',
         description: `Failed to add data source: ${error.message}`,
       });
+      return false;
     }
   };
 
@@ -307,6 +414,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         title: 'Success!',
         description: `Data source "${updatedSourceData.name}" has been updated.`,
       });
+      return true;
     } catch (error: any) {
       console.error('Error updating data source: ', error);
       toast({
@@ -314,6 +422,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         title: 'Error',
         description: `Failed to update data source: ${error.message}`,
       });
+      return false;
     }
   };
 
@@ -327,11 +436,14 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         description: `Data source "${sourceName}" has been deleted.`,
       });
       if (activeDataSource?.id === sourceId) {
-        setActiveDataSourceState(dataSources[0] || null);
+        const nextSource =
+          dataSources.find((dataSource) => dataSource.id !== sourceId) || null;
+        setActiveDataSourceState(nextSource);
       }
       if (defaultDataSourceId === sourceId) {
         await setDefaultDataSource(''); // Unset default
       }
+      return true;
     } catch (error: any) {
       console.error('Error deleting data source: ', error);
       toast({
@@ -339,6 +451,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         title: 'Error',
         description: `Failed to delete data source: ${error.message}`,
       });
+      return false;
     }
   };
 
@@ -372,14 +485,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   const handleSetActiveDataSource = useCallback(
     (source: EnrichedDataSource | null) => {
       if (source) {
-        const now = Date.now();
-        const newTimestamps = { ...viewTimestamps, [source.id]: now };
-        setViewTimestamps(newTimestamps);
-        try {
-          localStorage.setItem('viewTimestamps', JSON.stringify(newTimestamps));
-        } catch (e) {
-          console.error('Failed to write to local storage', e);
-        }
+        updateViewTimestamp(source.id, source.lastUpdatedAt || 0);
 
         // Reset newItemsCount for the active source
         setDataSources((prevSources) =>
@@ -390,7 +496,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       }
       setActiveDataSourceState(source);
     },
-    [viewTimestamps]
+    [updateViewTimestamp]
   );
 
   const contextValue = useMemo(
@@ -416,8 +522,13 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   return (
     <DataSourceContext.Provider value={contextValue}>
       {isLoading ? (
-        <div className="flex h-screen w-full items-center justify-center">
+        <div
+          className="flex h-screen w-full flex-col items-center justify-center gap-3 text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
           <Database className="h-12 w-12 animate-pulse text-primary" />
+          <p className="text-sm">Loading data sources…</p>
         </div>
       ) : (
         children

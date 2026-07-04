@@ -14,6 +14,12 @@ import { Button } from './ui/button';
 import { Copy, Check, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import Pagination from './Pagination';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface DataTableProps {
   data: DataItem[];
@@ -23,32 +29,115 @@ interface DataTableProps {
   onPageChange: (page: number) => void;
   totalCount: number;
   itemsPerPage: number;
+  hasActiveSearch: boolean;
 }
+
+const CharacterCount = ({ value }: { value: unknown }) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  const count = Array.from(String(value)).length;
+
+  return (
+    <span className="w-fit whitespace-nowrap rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      {count} {count === 1 ? 'char' : 'chars'}
+    </span>
+  );
+};
 
 const CopyButton = ({ value }: { value: string | undefined }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!value) return;
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
   };
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-7 w-7"
-      onClick={handleCopy}
-      disabled={!value}
-    >
-      {copied ? (
-        <Check className="h-4 w-4 text-green-500" />
-      ) : (
-        <Copy className="h-4 w-4" />
-      )}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          onClick={handleCopy}
+          disabled={!value}
+          aria-label={copied ? 'Copied to clipboard' : 'Copy to clipboard'}
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-green-500" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{copied ? 'Copied' : 'Copy'}</TooltipContent>
+    </Tooltip>
+  );
+};
+
+const FieldValue = ({
+  value,
+  className,
+}: {
+  value: unknown;
+  className?: string;
+}) => {
+  const normalizedValue =
+    value === null || value === undefined || value === ''
+      ? null
+      : String(value);
+
+  return (
+    <div className="flex min-w-0 flex-1">
+      <span
+        className={cn('min-w-0 truncate font-mono text-sm', className)}
+        title={normalizedValue || undefined}
+      >
+        {normalizedValue || 'N/A'}
+      </span>
+    </div>
+  );
+};
+
+const MobileFieldRow = ({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: unknown;
+  mono?: boolean;
+}) => {
+  const normalizedValue =
+    value === null || value === undefined || value === ''
+      ? null
+      : String(value);
+
+  return (
+    <div className="grid min-h-14 grid-cols-[4.75rem_minmax(0,1fr)_2rem] items-center gap-2">
+      <div className="flex flex-col items-start gap-1">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+        <CharacterCount value={normalizedValue} />
+      </div>
+      <span
+        className={cn(
+          'min-w-0 truncate text-sm',
+          mono && 'font-mono text-muted-foreground'
+        )}
+        title={normalizedValue || undefined}
+      >
+        {normalizedValue || 'N/A'}
+      </span>
+      <CopyButton value={normalizedValue || undefined} />
+    </div>
   );
 };
 
@@ -59,7 +148,8 @@ const MobileDataCard = ({
   item: DataItem;
   source: DataSource;
 }) => {
-  const value = item[source.fieldPassword] ?? 'N/A';
+  const value = item[source.fieldPassword];
+  const pinValue = item[source.fieldPin || 'pin'];
   const createdAtDate = format(
     new Date(item.createdAt.seconds * 1000),
     "do (EEEE), MMMM, yyyy h:mm a"
@@ -67,26 +157,19 @@ const MobileDataCard = ({
 
   return (
     <Card>
-      <CardContent className="p-4 space-y-3">
-        <div className="flex justify-between items-start">
-          <span className="font-semibold">{item.username}</span>
-          <CopyButton value={item.username} />
-        </div>
-        <div className="flex justify-between items-start">
-          <span className="font-mono text-sm text-muted-foreground truncate">
-            {value}
-          </span>
-          <CopyButton value={value} />
-        </div>
+      <CardContent className="divide-y p-3">
+        <MobileFieldRow label="Username" value={item.username} />
+        <MobileFieldRow label="Password" value={value} mono />
         {source.displayPin && (
-          <div className="flex justify-between items-start">
-            <span className="font-mono text-sm text-muted-foreground">
-              {item.pin ?? 'N/A'}
-            </span>
-            <CopyButton value={item.pin} />
-          </div>
+          <MobileFieldRow label="PIN" value={pinValue} mono />
         )}
-        <p className="text-xs text-muted-foreground pt-2">{createdAtDate}</p>
+        <div className="grid min-h-11 grid-cols-[4.75rem_minmax(0,1fr)_2rem] items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Created
+          </span>
+          <span className="text-xs text-muted-foreground">{createdAtDate}</span>
+          <span aria-hidden="true" />
+        </div>
       </CardContent>
     </Card>
   );
@@ -99,7 +182,8 @@ const DesktopDataRow = ({
   item: DataItem;
   source: DataSource;
 }) => {
-  const value = item[source.fieldPassword] ?? 'N/A';
+  const value = item[source.fieldPassword];
+  const pinValue = item[source.fieldPin || 'pin'];
   const createdAtDate = format(
     new Date(item.createdAt.seconds * 1000),
     "do (EEEE), MMMM, yyyy h:mm a"
@@ -108,22 +192,37 @@ const DesktopDataRow = ({
   return (
     <TableRow>
       <TableCell>
-        <div className="flex items-center gap-2">
-          <span>{item.username}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="min-w-0 truncate" title={item.username}>
+              {item.username}
+            </span>
+          </div>
+          <CharacterCount value={item.username} />
           <CopyButton value={item.username} />
         </div>
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-2 font-mono text-sm">
-          <span className="truncate">{value}</span>
-          <CopyButton value={value} />
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <FieldValue value={value} />
+          <CharacterCount value={value} />
+          <CopyButton
+            value={value === null || value === undefined ? undefined : String(value)}
+          />
         </div>
       </TableCell>
       {source.displayPin && (
         <TableCell>
-          <div className="flex items-center gap-2 font-mono text-sm">
-            <span>{item.pin ?? 'N/A'}</span>
-            <CopyButton value={item.pin} />
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <FieldValue value={pinValue} />
+            <CharacterCount value={pinValue} />
+            <CopyButton
+              value={
+                pinValue === null || pinValue === undefined
+                  ? undefined
+                  : String(pinValue)
+              }
+            />
           </div>
         </TableCell>
       )}
@@ -142,14 +241,25 @@ export default function DataTable({
   onPageChange,
   totalCount,
   itemsPerPage,
+  hasActiveSearch,
 }: DataTableProps) {
   if (data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground p-8 rounded-lg bg-card">
         <Info className="w-12 h-12 mb-4" />
-        <h3 className="text-xl font-semibold text-foreground">No Data Found</h3>
-        <p className="mt-2">No entries match your current search query.</p>
-        <p>Try refining your search or refreshing the data source.</p>
+        <h3 className="text-xl font-semibold text-foreground">
+          {hasActiveSearch ? 'No Matching Entries' : 'No Entries Yet'}
+        </h3>
+        <p className="mt-2">
+          {hasActiveSearch
+            ? 'No entries match your current username search.'
+            : 'This data source does not contain any entries yet.'}
+        </p>
+        <p>
+          {hasActiveSearch
+            ? 'Try changing or clearing your search.'
+            : 'Refresh the data source after new entries are added.'}
+        </p>
       </div>
     );
   }
@@ -166,13 +276,13 @@ export default function DataTable({
 
         {/* Desktop View */}
         <div className="hidden md:block rounded-lg border">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Password / Access</TableHead>
-                {source.displayPin && <TableHead>PIN</TableHead>}
-                <TableHead>Created At</TableHead>
+                <TableHead className="w-[26%]">Username</TableHead>
+                <TableHead className="w-[30%]">Password / Access</TableHead>
+                {source.displayPin && <TableHead className="w-[18%]">PIN</TableHead>}
+                <TableHead className="w-56">Created At</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

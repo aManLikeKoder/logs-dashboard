@@ -10,6 +10,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarGroup,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import {
   Database,
@@ -31,6 +32,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
 export default function DataSourceSidebar() {
+  const { isMobile, setOpenMobile } = useSidebar();
   const {
     dataSources,
     activeDataSource,
@@ -56,6 +58,11 @@ export default function DataSourceSidebar() {
     setDialogOpen(true);
   };
 
+  const selectSource = (source: EnrichedDataSource) => {
+    setActiveDataSource(source);
+    if (isMobile) setOpenMobile(false);
+  };
+
   return (
     <>
       <SidebarHeader className="border-b border-sidebar-border">
@@ -74,13 +81,16 @@ export default function DataSourceSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
+          <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">
+            Data sources
+          </p>
           <SidebarMenu>
             {dataSources.map((source) => (
               <SidebarMenuItem key={source.id}>
                 <SidebarMenuButton
-                  onClick={() => setActiveDataSource(source)}
+                  onClick={() => selectSource(source)}
                   isActive={activeDataSource?.id === source.id}
-                  className="pr-8 justify-between"
+                  className="h-12 justify-between pr-12 text-sm"
                 >
                   <div className="flex items-center gap-2 truncate">
                     {defaultDataSourceId === source.id && (
@@ -89,16 +99,26 @@ export default function DataSourceSidebar() {
                     <span className="truncate">{source.name}</span>
                   </div>
                   {source.newItemsCount > 0 && (
-                    <Badge variant="destructive" className="h-5 px-2">
-                      {source.newItemsCount > 99 ? '99+' : source.newItemsCount}
+                    <Badge
+                      variant="destructive"
+                      className="mr-8 h-5 min-w-5 px-1.5 tabular-nums"
+                      aria-label={`${source.newItemsCount.toLocaleString()} new records`}
+                    >
+                      {source.newItemsCount.toLocaleString()}
                     </Badge>
                   )}
                 </SidebarMenuButton>
 
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/menu-item:opacity-100 focus-within:opacity-100 transition-opacity">
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-100 transition-opacity md:opacity-0 md:group-hover/menu-item:opacity-100 md:focus-within:opacity-100">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10"
+                        aria-label={`Actions for ${source.name}`}
+                        title={`Actions for ${source.name}`}
+                      >
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -106,17 +126,21 @@ export default function DataSourceSidebar() {
                       <DropdownMenuItem
                         onSelect={() => setDefaultDataSource(source.id)}
                         disabled={defaultDataSourceId === source.id}
+                        className="min-h-11"
                       >
                         <Star className="mr-2 h-4 w-4" />
                         Set as Default
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => openEditDialog(source)}>
+                      <DropdownMenuItem
+                        onSelect={() => openEditDialog(source)}
+                        className="min-h-11"
+                      >
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onSelect={() => setDeletingSource(source)}
-                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                        className="min-h-11 text-destructive focus:bg-destructive/10 focus:text-destructive"
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -130,8 +154,8 @@ export default function DataSourceSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
-        <Button onClick={openAddDialog} className="w-full">
+      <SidebarFooter className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <Button onClick={openAddDialog} className="h-11 w-full">
           <Plus className="mr-2 h-4 w-4" />
           Add Source
         </Button>
